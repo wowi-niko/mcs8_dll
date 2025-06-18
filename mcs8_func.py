@@ -187,7 +187,7 @@ class MCS8:
         self.dll.GetStatusData(byref(status), self.nDev)
         return status
 
-    def get_acq_setting(self) -> ACQSETTING:
+    def get_acq_setting(self, channel_id=0) -> ACQSETTING:
         """
         Retrieve the acquisition settings from the device.
         
@@ -195,7 +195,7 @@ class MCS8:
             ACQSETTING: The acquisition settings structure.
         """
         acq = ACQSETTING()
-        self.dll.GetSettingData(byref(acq), self.nDev)
+        self.dll.GetSettingData(byref(acq), channel_id)
         return acq
 
     def check_status(self):

@@ -18,6 +18,7 @@ class ACQSETTING(Structure):
         ("param", c_int),
         ("offset", c_int),
         ("xdim", c_int),
+        ("type", c_int),
         ("bitshift", c_int),
         ("active", c_int),
         ("evpreset", c_double),

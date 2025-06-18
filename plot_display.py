@@ -774,6 +774,8 @@ class MCSDisplay:
         # Destroy widgets
         for widget in self.tab_display.winfo_children():
             widget.destroy()
+    
+
 
     def force_rebuild(self):
         """Force a complete rebuild of the display
@@ -801,13 +803,15 @@ class MCSDisplay:
         is2d = []
         
         try:
-            # Get acquisition settings
-            acq = self.mcs.get_acq_setting()
-            range_val = acq.range
-            
+
             # Check all 8 channels (0-7) for MCS8
-            for channel in range(8):
+            for channel in range(16):
                 try:
+                    # Get acquisition settings
+                    acq = self.mcs.get_acq_setting(channel)
+                    range_val = acq.range
+                    xdim = getattr(acq, 'xdim', 0)
+
                     # Get data for this channel
                     data = self.mcs.get_block(0, range_val, channel_id=channel)
                     
@@ -816,29 +820,21 @@ class MCSDisplay:
                     
                     # Check if channel has meaningful data
                     if np.any(data_array != 0):
-                        active_channels.append(channel)
-                        channel_data[channel] = data_array
                         
                         # Check if this might be 2D data
                         # For MCS8, this would need to be determined based on your specific setup
                         # For now, assume 1D data unless we can detect 2D structure
-                        is_2d_channel = False
+
+                        if xdim > 0:
+                            ydim = int(range_val / xdim)
+                            data_array = data_array.reshape((ydim, -1))
+                            is_2d_channel = True
                         
-                        # Try to determine if data should be treated as 2D
-                        # This is hardware/configuration specific - adjust as needed
-                        try:
-                            # Example: if range_val is large and can be reshaped nicely
-                            if len(data_array) >= 1024 and hasattr(acq, 'xdim') and acq.xdim > 0:
-                                xdim = acq.xdim
-                                ydim = len(data_array) // xdim
-                                if xdim * ydim == len(data_array):
-                                    data_array = data_array.reshape((ydim, xdim))
-                                    channel_data[channel] = data_array
-                                    is_2d_channel = True
-                        except:
-                            # If 2D reshape fails, stick with 1D
-                            pass
-                        
+                        else:
+                            is_2d_channel = False
+
+                        channel_data[channel] = data_array
+                        active_channels.append(channel)
                         is2d.append(is_2d_channel)
                         
                 except Exception as e:

@@ -119,15 +119,14 @@ class MCSUI:
             self.mcs.set_mpaname(filename)
             self.filename = filename
             self.mcs.run_cmd(f"loadmpa {self.filename}")
-            self.display.update_plot()
+            self.display.create_display()
 
     def _load_mpa(self):
-
         if self.filename:
             self.mcs.set_mpaname(self.filename)
             try:
                 self.mcs.run_cmd(f"loadmpa {self.filename}")
-                self.display.update_plot()
+                self.display.create_display()
             except Exception as e:
                 print(f"Error loading MPA file: {e}")
 
