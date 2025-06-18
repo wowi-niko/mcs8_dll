@@ -320,7 +320,7 @@ class MCS8:
         print("  caluse =", acq.caluse)
         print("  calpoints =", acq.calpoints)
         print("  active =", acq.active)
-        print("  roipreset =", acq.evpreset)
+        print("  roipreset =", acq.eventpreset)
 
     @staticmethod
     def print_dat_setting(dat: DATSETTING) -> None:
@@ -375,7 +375,7 @@ class MCS8:
                 f"Caluse: {acq.caluse}\n"
                 f"Calpoints: {acq.calpoints}\n"
                 f"Active: {acq.active}\n"
-                f"ROI Preset: {acq.evpreset}")
+                f"ROI Preset: {acq.eventpreset}")
 
     @staticmethod
     def dat_setting_text(dat: DATSETTING) -> str:
