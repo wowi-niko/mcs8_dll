@@ -70,7 +70,7 @@ class MCSUI:
 
     def _setup_window(self):
         """Setup main window properties and keyboard shortcuts"""
-        self.root.title("MCS8 Measurement Control - Advanced")
+        self.root.title("MCS8 Python DLL - FAST ComTec GmbH")
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
         self.root.rowconfigure(2, weight=0)
@@ -334,24 +334,6 @@ class MCSUI:
         # Create control frame
         control_frame = ttk.Frame(self.tab_display)
         control_frame.pack(fill='x', side='top', padx=5, pady=5)
-        
-        # Performance options
-        perf_frame = ttk.LabelFrame(control_frame, text="Performance Options")
-        perf_frame.pack(side='left', padx=5)
-        
-        # Update interval control
-        ttk.Label(perf_frame, text="Update Interval (ms):").pack(side='left', padx=5)
-        interval_var = tk.IntVar(value=self.display_update_interval)
-        interval_spin = ttk.Spinbox(
-            perf_frame, 
-            from_=100, 
-            to=5000, 
-            increment=100,
-            textvariable=interval_var,
-            width=10,
-            command=lambda: setattr(self, 'display_update_interval', interval_var.get())
-        )
-        interval_spin.pack(side='left', padx=5)
         
         # Manual refresh button
         refresh_btn = ttk.Button(

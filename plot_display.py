@@ -110,7 +110,7 @@ class MCSDisplay:
             time.sleep(1)
 
     def _create_figure_and_plots(self, active_channels: List[int], channel_data: Dict[int, np.ndarray], 
-                                 parent_frame: ttk.Frame, is2d: List[bool]):
+                                parent_frame: ttk.Frame, is2d: List[bool]):
         """Create the figure and initial plots with shared x-axis and minimal spacing"""
         # Count 1D channels
         channels_1d = [(ch, idx) for idx, ch in enumerate(active_channels) if not is2d[idx]]
@@ -119,6 +119,11 @@ class MCSDisplay:
             return
         
         num_channels = len(channels_1d)
+        
+        # Define background color for plot areas only: rgba(36,255,255,100) converted to matplotlib format
+        # Assuming alpha 100 is out of 255 scale (0.392) - adjust if needed
+        plot_bg_color = (36/255, 255/255, 255/255, 100/255)  # Cyan with transparency
+        # Alternative if alpha is out of 100: plot_bg_color = (36/255, 255/255, 255/255, 1.0)
         
         # Create figure with appropriate size
         fig_height = max(3, min(8, 2 + num_channels * 1.5))  # Dynamic height based on channel count
@@ -142,6 +147,9 @@ class MCSDisplay:
                     # Subsequent subplots share x-axis with the first
                     ax = self.fig.add_subplot(num_channels, 1, plot_idx + 1, sharex=shared_ax)
             
+            # Set subplot background color (plot area only)
+            ax.set_facecolor(plot_bg_color)
+            
             # Store axis
             self.axes[channel] = ax
             
@@ -151,10 +159,11 @@ class MCSDisplay:
                 data = data[0]
             
             # Create line object with different colors for better distinction
-            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
+            # Enhanced color palette with better contrast against cyan background
+            colors = ['#000080', '#8B0000', '#006400', '#8B008B', '#FF4500', '#4B0082', '#B22222', '#2F4F4F']
             color = colors[plot_idx % len(colors)]
             
-            line, = ax.plot([], [], color=color, linewidth=0.8, label=f'Channel {channel}')
+            line, = ax.plot([], [], color=color, linewidth=1.2, label=f'Channel {channel}')  # Slightly thicker lines
             self.lines[channel] = line
             
             # Set initial data
@@ -177,25 +186,33 @@ class MCSDisplay:
                 margin = y_range * 0.05  # Reduced margin for more compact view
                 ax.set_ylim(data_min - margin, data_max + 2*margin)
             
-            # Grid and styling
-            ax.grid(True, which="both", ls="-", alpha=0.2)
+            # Enhanced grid styling for better visibility on cyan background
+            ax.grid(True, which="both", ls="-", alpha=0.4, color='white', linewidth=0.5)
             
-            # Labels and titles
-            ax.set_ylabel(f'Ch {channel+1}\nCounts', fontsize=8)
+            # Labels and titles with better contrast
+            ax.set_ylabel(f'Ch {channel+1}\nCounts', fontsize=8, color='black')
+            
+            # Style the tick labels for better readability
+            ax.tick_params(axis='both', colors='black', labelsize=7)
             
             # Only show x-axis label and ticks on the bottom plot
             if plot_idx == num_channels - 1:
-                ax.set_xlabel('Channel', fontsize=8)
+                ax.set_xlabel('Channel', fontsize=8, color='black')
                 # Keep x-tick labels visible
             else:
                 # Hide x-tick labels for upper plots to save space
                 ax.tick_params(labelbottom=False)
             
-            # Add subtle channel identification
+            # Enhanced channel identification with better contrast
             if num_channels > 1:
                 ax.text(0.95, 0.95, f'Ch {channel+1}', transform=ax.transAxes, 
-                       fontsize=8, verticalalignment='top', 
-                       bbox=dict(boxstyle="round,pad=0.3", facecolor=color, alpha=0.3))
+                    fontsize=9, verticalalignment='top', weight='bold',
+                    bbox=dict(boxstyle="round,pad=0.4", facecolor='white', alpha=0.8, edgecolor=color))
+            
+            # Style the spines (plot borders) for better definition
+            for spine in ax.spines.values():
+                spine.set_color('black')
+                spine.set_linewidth(1)
             
             # Cache the data
             self.channel_cache[channel] = data.copy()
@@ -209,8 +226,8 @@ class MCSDisplay:
                 left=0.12,    # Left margin
                 right=0.95,   # Right margin  
                 top=0.95,     # Top margin
-                bottom=0.1,  # Bottom margin
-                hspace=0.2   # Minimal vertical spacing between subplots
+                bottom=0.1,   # Bottom margin
+                hspace=0.2    # Minimal vertical spacing between subplots
             )
         
         # Create canvas
