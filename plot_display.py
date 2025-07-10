@@ -9,6 +9,11 @@ from matplotlib.colors import LogNorm
 from typing import Tuple, List, Dict
 import time
 from mcs8_func import MCS8
+# Add these imports to your existing imports
+import threading
+from dataclasses import dataclass
+from enum import Enum
+import hashlib
 
 class MCSDisplay:
     def __init__(self, tab_display: ttk.Frame, mcs: 'MCS8'):
@@ -858,3 +863,456 @@ class MCSDisplay:
             return [], {}, []
         
         return active_channels, channel_data, is2d
+    
+
+
+class ChangeType(Enum):
+    NO_CHANGE = 0
+    DATA_CHANGE = 1
+    SCALE_CHANGE = 2
+    DIMENSION_CHANGE = 3
+
+@dataclass
+class ChannelState:
+    """Track state of each channel for efficient change detection"""
+    data_hash: str = ""
+    shape: tuple = ()
+    data_range: tuple = (0, 0)
+    statistical_signature: tuple = (0, 0, 0, 0)  # min, max, mean, std
+    last_update: float = 0
+    x_limits: tuple = (0, 1)
+    y_limits: tuple = (0, 1)
+    update_count: int = 0
+
+class EfficientUpdateMixin:
+    """Mixin class to add efficient update capabilities to MCSDisplay"""
+    
+    def __init_efficient_updates__(self):
+        """Initialize the efficient update system"""
+        # State tracking
+        self.channel_states = {}  # Channel ID -> ChannelState
+        self.update_thread = None
+        self.update_stop_event = threading.Event()
+        self.update_running = False
+        
+        # Configuration
+        self.adaptive_update_interval = 0.1  # Base update interval
+        self.max_update_interval = 2.0  # Maximum interval when no changes
+        self.min_update_interval = 0.3  # Minimum interval during rapid changes
+        self.change_threshold = 0.01  # Relative change threshold for rescaling
+        self.stability_frames = 5  # Frames to wait before considering data stable
+        
+        # Performance tracking
+        self.update_performance = {
+            'total_updates': 0,
+            'data_updates': 0,
+            'scale_updates': 0,
+            'skipped_updates': 0,
+            'avg_update_time': 0
+        }
+        
+        # Axis scaling parameters
+        self.axis_scaling = {
+            'y_margin_factor': 0.05,  # 5% margin on y-axis
+            'y_stability_threshold': 0.01,  # 1% change needed to rescale
+            'x_auto_extend': True,  # Automatically extend x-axis for new data
+            'adaptive_margins': True,  # Use adaptive margins based on data variability
+        }
+
+    def start_efficient_updates(self):
+        """Start the efficient update system in a separate thread"""
+        if self.update_running:
+            return
+            
+        # Initialize the system
+        if not hasattr(self, 'channel_states'):
+            self.__init_efficient_updates__()
+            
+        self.update_stop_event.clear()
+        self.update_running = True
+        self.update_thread = threading.Thread(target=self._update_loop, daemon=True)
+        self.update_thread.start()
+
+    def stop_efficient_updates(self):
+        """Stop the efficient update system"""
+        if not self.update_running:
+            return
+            
+        self.update_stop_event.set()
+        self.update_running = False
+        if self.update_thread and self.update_thread.is_alive():
+            self.update_thread.join(timeout=1.0)
+
+    def _update_loop(self):
+        """Main update loop running in separate thread"""
+        current_interval = self.adaptive_update_interval
+        no_change_count = 0
+        
+        while not self.update_stop_event.wait(current_interval):
+            start_time = time.time()
+            
+            try:
+                # Check for changes and update accordingly
+                changes_detected = self._check_and_update_channels()
+                
+                # Adaptive interval adjustment
+                if changes_detected:
+                    no_change_count = 0
+                    current_interval = max(self.min_update_interval, current_interval * 0.9)
+                else:
+                    no_change_count += 1
+                    if no_change_count > self.stability_frames:
+                        current_interval = min(self.max_update_interval, current_interval * 1.1)
+                
+                # Update performance stats
+                update_time = time.time() - start_time
+                self._update_performance_stats(update_time, changes_detected)
+                
+            except Exception as e:
+                print(f"Error in update loop: {e}")
+                # On error, fall back to slower updates
+                current_interval = self.adaptive_update_interval
+
+    def _check_and_update_channels(self) -> bool:
+        """Check all channels for changes and update as needed"""
+        try:
+            # Get current data
+            active_channels, channel_data, is2d = self._get_channel_data()
+            
+            changes_detected = False
+            channels_to_update = []
+            
+            # Check each active channel for changes
+            for idx, channel in enumerate(active_channels):
+                if is2d[idx]:
+                    # Handle 2D/3D data separately
+                    change_type = self._detect_2d_changes(channel, channel_data[channel])
+                else:
+                    # Handle 1D data
+                    change_type = self._detect_1d_changes(channel, channel_data[channel])
+                
+                if change_type != ChangeType.NO_CHANGE:
+                    channels_to_update.append((channel, change_type, is2d[idx]))
+                    changes_detected = True
+            
+            # Update channels that have changed
+            if channels_to_update:
+                self._update_changed_channels(channels_to_update, channel_data)
+            
+            # Check for new/removed channels
+            current_set = set(active_channels)
+            cached_set = set(self.channel_states.keys())
+            if current_set != cached_set:
+                print("Channel configuration changed - triggering rebuild")
+                # Schedule a rebuild on the main thread
+                if hasattr(self, 'tab_display'):
+                    self.tab_display.after_idle(self.force_rebuild)
+                return True
+            
+            return changes_detected
+            
+        except Exception as e:
+            print(f"Error checking channel changes: {e}")
+            return False
+
+    def _detect_1d_changes(self, channel: int, data: np.ndarray) -> ChangeType:
+        """Detect changes in 1D channel data"""
+        if data.ndim > 1 and data.shape[0] == 1:
+            data = data[0]
+        
+        # Get or create channel state
+        if channel not in self.channel_states:
+            self.channel_states[channel] = ChannelState()
+        
+        state = self.channel_states[channel]
+        current_time = time.time()
+        
+        # Quick hash check for data changes
+        data_bytes = data.tobytes()
+        current_hash = hashlib.md5(data_bytes).hexdigest()
+        
+        if current_hash == state.data_hash:
+            return ChangeType.NO_CHANGE
+        
+        # Data has changed - analyze the type of change
+        current_shape = data.shape
+        current_range = (np.min(data), np.max(data))
+        current_stats = (
+            current_range[0], 
+            current_range[1], 
+            np.mean(data), 
+            np.std(data)
+        )
+        
+        change_type = ChangeType.DATA_CHANGE
+        
+        # Check for dimension changes
+        if current_shape != state.shape:
+            change_type = ChangeType.DIMENSION_CHANGE
+        # Check for significant scale changes
+        elif self._significant_scale_change(state.statistical_signature, current_stats):
+            change_type = ChangeType.SCALE_CHANGE
+        
+        # Update state
+        state.data_hash = current_hash
+        state.shape = current_shape
+        state.data_range = current_range
+        state.statistical_signature = current_stats
+        state.last_update = current_time
+        state.update_count += 1
+        
+        return change_type
+
+    def _detect_2d_changes(self, channel: int, data: np.ndarray) -> ChangeType:
+        """Detect changes in 2D/3D channel data"""
+        if data.ndim <= 1:
+            return ChangeType.NO_CHANGE
+        
+        # Get or create channel state
+        if channel not in self.channel_states:
+            self.channel_states[channel] = ChannelState()
+        
+        state = self.channel_states[channel]
+        
+        # For 2D data, use shape and statistical signature for change detection
+        current_shape = data.shape
+        current_stats = (
+            np.min(data), 
+            np.max(data), 
+            np.mean(data), 
+            np.std(data)
+        )
+        
+        # Check for changes
+        if (current_shape == state.shape and 
+            np.allclose(current_stats, state.statistical_signature, rtol=self.change_threshold)):
+            return ChangeType.NO_CHANGE
+        
+        change_type = ChangeType.DATA_CHANGE
+        if current_shape != state.shape:
+            change_type = ChangeType.DIMENSION_CHANGE
+        elif self._significant_scale_change(state.statistical_signature, current_stats):
+            change_type = ChangeType.SCALE_CHANGE
+        
+        # Update state
+        state.shape = current_shape
+        state.statistical_signature = current_stats
+        state.last_update = time.time()
+        state.update_count += 1
+        
+        return change_type
+
+    def _significant_scale_change(self, old_stats: tuple, new_stats: tuple) -> bool:
+        """Determine if the scale change is significant enough to warrant axis rescaling"""
+        if not old_stats or len(old_stats) < 4 or len(new_stats) < 4:
+            return True
+        
+        old_min, old_max, old_mean, old_std = old_stats
+        new_min, new_max, new_mean, new_std = new_stats
+        
+        # Calculate relative changes
+        if old_max != old_min:
+            range_change = abs((new_max - new_min) - (old_max - old_min)) / (old_max - old_min)
+        else:
+            range_change = 1.0 if new_max != new_min else 0.0
+        
+        if old_mean != 0:
+            mean_change = abs(new_mean - old_mean) / abs(old_mean)
+        else:
+            mean_change = 1.0 if new_mean != 0 else 0.0
+        
+        # Significant if range changed by more than threshold or mean shifted significantly
+        return (range_change > self.axis_scaling['y_stability_threshold'] or 
+                mean_change > self.axis_scaling['y_stability_threshold'])
+
+    def _update_changed_channels(self, channels_to_update: list, channel_data: dict):
+        """Update only the channels that have changed"""
+        def update_on_main_thread():
+            try:
+                for channel, change_type, is_2d in channels_to_update:
+                    if is_2d:
+                        self._update_2d_channel_efficient(channel, change_type)
+                    else:
+                        self._update_1d_channel_efficient(channel, change_type, channel_data[channel])
+                        
+                # Update canvas once for all changes
+                if self.canvas:
+                    self.canvas.draw_idle()
+                    
+            except Exception as e:
+                print(f"Error updating changed channels: {e}")
+        
+        # Schedule update on main thread
+        if hasattr(self, 'tab_display'):
+            self.tab_display.after_idle(update_on_main_thread)
+
+    def _update_1d_channel_efficient(self, channel: int, change_type: ChangeType, data: np.ndarray):
+        """Efficiently update a 1D channel based on change type"""
+        if channel not in self.lines or channel not in self.axes:
+            return
+        
+        if data.ndim > 1 and data.shape[0] == 1:
+            data = data[0]
+        
+        line = self.lines[channel]
+        ax = self.axes[channel]
+        state = self.channel_states[channel]
+        
+        # Update line data
+        x_data = np.arange(len(data))
+        line.set_data(x_data, data)
+        
+        # Handle axis scaling based on change type
+        if change_type in [ChangeType.DIMENSION_CHANGE, ChangeType.SCALE_CHANGE]:
+            # Update x-axis if data length changed
+            if len(data) != len(self.channel_cache.get(channel, [])):
+                ax.set_xlim(0, len(data))
+                state.x_limits = (0, len(data))
+            
+            # Smart y-axis scaling
+            new_y_limits = self._calculate_optimal_y_limits(data, state)
+            if new_y_limits != state.y_limits:
+                ax.set_ylim(new_y_limits)
+                state.y_limits = new_y_limits
+        
+        # Update cache
+        self.channel_cache[channel] = data.copy()
+
+    def _update_2d_channel_efficient(self, channel: int, change_type: ChangeType):
+        """Efficiently update a 2D/3D channel"""
+        if channel in self.images:
+            # For 2D/3D, delegate to existing update method
+            # but only for significant changes
+            if change_type != ChangeType.DATA_CHANGE:
+                self._update_2d_3d_image(channel)
+
+    def _calculate_optimal_y_limits(self, data: np.ndarray, state: ChannelState) -> tuple:
+        """Calculate optimal y-axis limits with adaptive margins and stability"""
+        data_min, data_max = np.min(data), np.max(data)
+        
+        if data_min == data_max:
+            # Handle constant data
+            center = data_min
+            margin = max(1, abs(center) * 0.1)
+            return (center - margin, center + margin)
+        
+        # Calculate range and margin
+        data_range = data_max - data_min
+        
+        if self.axis_scaling['adaptive_margins']:
+            # Adaptive margin based on data variability
+            data_std = np.std(data)
+            if data_std > 0:
+                # Use larger margins for more variable data
+                margin_factor = self.axis_scaling['y_margin_factor'] * (1 + data_std / data_range)
+            else:
+                margin_factor = self.axis_scaling['y_margin_factor']
+        else:
+            margin_factor = self.axis_scaling['y_margin_factor']
+        
+        margin = data_range * margin_factor
+        
+        # Consider previous limits for stability
+        if (state.y_limits and state.update_count > self.stability_frames and 
+            not self._needs_axis_expansion(data_min, data_max, state.y_limits)):
+            # Keep current limits if data still fits comfortably
+            return state.y_limits
+        
+        return (data_min - margin, data_max + margin)
+
+    def _needs_axis_expansion(self, data_min: float, data_max: float, current_limits: tuple) -> bool:
+        """Check if axis limits need to be expanded"""
+        current_min, current_max = current_limits
+        current_range = current_max - current_min
+        
+        # Expand if data approaches boundaries (within 10% of range)
+        buffer = current_range * 0.1
+        
+        needs_expansion = (
+            data_min < (current_min + buffer) or 
+            data_max > (current_max - buffer)
+        )
+        
+        return needs_expansion
+
+    def _update_performance_stats(self, update_time: float, changes_detected: bool):
+        """Update performance statistics"""
+        stats = self.update_performance
+        stats['total_updates'] += 1
+        
+        if changes_detected:
+            stats['data_updates'] += 1
+        else:
+            stats['skipped_updates'] += 1
+        
+        # Running average of update time
+        alpha = 0.1  # Smoothing factor
+        if stats['avg_update_time'] == 0:
+            stats['avg_update_time'] = update_time
+        else:
+            stats['avg_update_time'] = (alpha * update_time + 
+                                      (1 - alpha) * stats['avg_update_time'])
+
+    def get_update_performance(self) -> dict:
+        """Get current performance statistics"""
+        return self.update_performance.copy()
+
+    def configure_efficient_updates(self, **kwargs):
+        """Configure the efficient update system"""
+        for key, value in kwargs.items():
+            if key in ['adaptive_update_interval', 'max_update_interval', 
+                      'min_update_interval', 'change_threshold', 'stability_frames']:
+                setattr(self, key, value)
+            elif key in self.axis_scaling:
+                self.axis_scaling[key] = value
+            else:
+                print(f"Unknown configuration parameter: {key}")
+
+# Extension to your existing MCSDisplay class
+def extend_mcs_display():
+    """Function to add efficient update capabilities to MCSDisplay"""
+    
+    # Create a new class that inherits from both MCSDisplay and EfficientUpdateMixin
+    class EfficientMCSDisplay(MCSDisplay, EfficientUpdateMixin):
+        def __init__(self, tab_display: ttk.Frame, mcs: 'MCS8'):
+            # Initialize the base class
+            MCSDisplay.__init__(self, tab_display, mcs)
+            
+            # Initialize efficient updates
+            self.__init_efficient_updates__()
+            
+            # Override the periodic update method
+            self.original_periodic_update = self.preiodic_update  # Fix typo from original
+            
+        def start_live_updates(self):
+            """Start live updates using the efficient system"""
+            self.start_efficient_updates()
+            
+        def stop_live_updates(self):
+            """Stop live updates"""
+            self.stop_efficient_updates()
+            
+        def preiodic_update(self):
+            """Override original periodic update to use efficient system"""
+            # The efficient system handles this automatically
+            pass
+            
+        def force_rebuild(self):
+            """Enhanced force rebuild that resets efficient update state"""
+            # Stop updates during rebuild
+            was_running = self.update_running
+            if was_running:
+                self.stop_efficient_updates()
+                
+            # Clear efficient update state
+            if hasattr(self, 'channel_states'):
+                self.channel_states.clear()
+            
+            # Call original rebuild
+            MCSDisplay.force_rebuild(self)
+            
+            # Restart updates if they were running
+            if was_running:
+                self.start_efficient_updates()
+    
+    return EfficientMCSDisplay

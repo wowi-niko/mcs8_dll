@@ -7,7 +7,7 @@ Provides the primary GUI interface for MCS8 device control.
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext, messagebox
 from mcs8_func import MCS8, CreateToolTip
-from plot_display import MCSDisplay
+from plot_display import extend_mcs_display
 from structures import ACQSETTING, DATSETTING, BOARDSETTING
 from settings_manager import SettingsManager
 
@@ -252,26 +252,19 @@ class MCSUI:
     def _start(self):
         """Start data acquisition with display refresh"""
         self.refresh_settings()
-        self.display._isplaying = True
-        if self.board.prena:
-            self.root.after(self.timepreset, lambda: self.display._set_playing())
 
         if self.display:
             self.display._clear_display()
         self.mcs.start()
         if self.display:
-            self.root.after(1000, lambda: self.display.create_display())
-
-        #self.root.after(2000,self.display.preiodic_update())
+            self.root.after(500, lambda: self.display.create_display())
+            self.display.start_live_updates()
 
     def _stop(self):
         """Stop data acquisition with display refresh"""
         self._isplaying = False
-        if self.display:
-            self.display._clear_display()
         self.mcs.halt()
-        if self.display:
-            self.root.after(1000, lambda: self.display.create_display())
+        self.display.stop_live_updates()
 
     def _continue(self):
         """Continue data acquisition with display refresh"""
@@ -333,7 +326,10 @@ class MCSUI:
     # Display setup
     def _setup_display(self):
         """Setup the display tab with plot and refresh controls"""
-        self.display = MCSDisplay(self.tab_display, self.mcs)
+        EfficientMCSDisplay = extend_mcs_display()
+        self.display = EfficientMCSDisplay(self.tab_display, self.mcs)
+        self.display.start_live_updates()
+
         
         # Create control frame
         control_frame = ttk.Frame(self.tab_display)
