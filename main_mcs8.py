@@ -24,7 +24,7 @@ class MCSUI:
         self.root = tk.Tk()
         self.display = None
         self.status_labels = {}
-        
+
         # Command line interface variables
         self.command_history = []
         self.history_index = -1
@@ -44,8 +44,13 @@ class MCSUI:
         self.check_DLL()
         
         # Set initial window size
-        self.root.geometry("1200x900")
+        self.root.geometry("1000x800")
         self.root.update_idletasks()
+
+    def refresh_settings(self):
+        self.acq = self.mcs.get_acq_setting(0)
+        self.dat = self.mcs.get_dat_setting()
+        self.board = self.mcs.get_mcs_setting()
         
     def check_DLL(self):
         """Check DLL status and show warning if needed"""
@@ -242,17 +247,26 @@ class MCSUI:
             # Store settings in manager for apply_setting method
             self.settings_manager.settings_data[title.lower().replace(' settings', '')] = settings_dict
 
+
     # Control methods
     def _start(self):
         """Start data acquisition with display refresh"""
+        self.refresh_settings()
+        self.display._isplaying = True
+        if self.board.prena:
+            self.root.after(self.timepreset, lambda: self.display._set_playing())
+
         if self.display:
             self.display._clear_display()
         self.mcs.start()
         if self.display:
             self.root.after(1000, lambda: self.display.create_display())
 
+        #self.root.after(2000,self.display.preiodic_update())
+
     def _stop(self):
         """Stop data acquisition with display refresh"""
+        self._isplaying = False
         if self.display:
             self.display._clear_display()
         self.mcs.halt()
@@ -261,6 +275,7 @@ class MCSUI:
 
     def _continue(self):
         """Continue data acquisition with display refresh"""
+        self._isplaying = True
         if self.display:
             self.display._clear_display()
         self.mcs.continue_device()
@@ -472,7 +487,7 @@ class MCSUI:
             # Update displays if needed
             if any(setting in command.lower() for setting in 
                    ['filename', 'board', 'dat', 'acq', 'range', 'dac', 'sweep']):
-                self._update_settings_display()
+                #self._update_settings_display()
                 self.settings_manager.load_channel_settings()
                 
         except Exception as e:
@@ -618,7 +633,7 @@ class MCSUI:
 
     def _load_all_settings(self):
         """Load all settings from device"""
-        self._update_settings_display()
+        #self._update_settings_display()
         self.settings_manager.load_channel_settings()
 
     def _show_shortcuts(self):

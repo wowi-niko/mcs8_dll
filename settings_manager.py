@@ -11,74 +11,169 @@ from mcs8_func import CreateToolTip
 
 
 class BitfieldEditor:
-    """Dialog for editing bitfield values"""
+    """Dialog for editing bitfield values with descriptive bit labels"""
     
-    def __init__(self, parent, field_name, var, label):
+    # Predefined bit descriptions for different fields
+    BIT_DESCRIPTIONS = {
+        'prena': {
+            0: 'realtime preset enabled',
+            1: 'Reserved',  # No description provided
+            2: 'sweep preset enabled',
+            3: 'ROI preset enabled',
+            4: 'Starts preset enabled',
+            5: 'ROI2 preset enabled',
+            6: 'ROI3 preset enabled',
+            7: 'ROI4 preset enabled',
+            8: 'ROI5 preset enabled',
+            9: 'ROI6 preset enabled',
+            10: 'ROI7 preset enabled',
+            11: 'ROI8 preset enabled',
+        }
+    }
+   
+    def __init__(self, parent, field_name, var, label, bit_descriptions=None, bit_width=16):
         self.parent = parent
         self.field_name = field_name
         self.var = var
         self.label = label
+        self.bit_width = bit_width
         
+        # Use provided descriptions or look up predefined ones
+        if bit_descriptions:
+            self.bit_descriptions = bit_descriptions
+        else:
+            self.bit_descriptions = self.BIT_DESCRIPTIONS.get(field_name, {})
+       
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(f"Edit {label} Bits")
-        self.dialog.geometry("400x300")
+        self.dialog.geometry("500x400")
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
+        # Center the dialog
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (self.dialog.winfo_screenheight() // 2) - (400 // 2)
+        self.dialog.geometry(f"500x400+{x}+{y}")
+       
         self._create_ui()
         self._load_current_value()
-
+        
     def _create_ui(self):
         """Create the bitfield editor UI"""
         main_frame = ttk.Frame(self.dialog)
         main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+       
+        # Header with field information
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill='x', pady=(0, 10))
         
-        # Header
-        ttk.Label(main_frame, text=f"Edit {self.label}", 
-                 font=('TkDefaultFont', 10, 'bold')).pack(pady=(0, 10))
-        
-        # Current value display
-        value_frame = ttk.Frame(main_frame)
+        ttk.Label(header_frame, text=f"Edit {self.label}",
+                 font=('TkDefaultFont', 12, 'bold')).pack(anchor='w')
+        ttk.Label(header_frame, text=f"Field: {self.field_name}",
+                 font=('TkDefaultFont', 9), foreground='gray').pack(anchor='w')
+       
+        # Current value display with multiple formats
+        value_frame = ttk.LabelFrame(main_frame, text="Current Value")
         value_frame.pack(fill='x', pady=(0, 10))
         
-        ttk.Label(value_frame, text="Current Value:").pack(side='left')
-        self.value_label = ttk.Label(value_frame, text="0", font=('Courier', 10))
-        self.value_label.pack(side='left', padx=10)
+        value_grid = ttk.Frame(value_frame)
+        value_grid.pack(fill='x', padx=5, pady=5)
         
+        ttk.Label(value_grid, text="Decimal:").grid(row=0, column=0, sticky='w', padx=(0, 5))
+        self.decimal_label = ttk.Label(value_grid, text="0", font=('Courier', 10))
+        self.decimal_label.grid(row=0, column=1, sticky='w', padx=(0, 20))
+        
+        ttk.Label(value_grid, text="Hexadecimal:").grid(row=0, column=2, sticky='w', padx=(0, 5))
+        self.hex_label = ttk.Label(value_grid, text="0x0000", font=('Courier', 10))
+        self.hex_label.grid(row=0, column=3, sticky='w', padx=(0, 20))
+        
+        ttk.Label(value_grid, text="Binary:").grid(row=1, column=0, sticky='w', padx=(0, 5))
+        self.binary_label = ttk.Label(value_grid, text="0" * self.bit_width, font=('Courier', 10))
+        self.binary_label.grid(row=1, column=1, columnspan=3, sticky='w')
+       
         # Bit checkboxes frame
         bits_frame = ttk.LabelFrame(main_frame, text="Individual Bits")
         bits_frame.pack(fill='both', expand=True, pady=(0, 10))
-        
+       
         # Create scrollable frame for bits
-        canvas = tk.Canvas(bits_frame)
+        canvas = tk.Canvas(bits_frame, highlightthickness=0)
         scrollbar = ttk.Scrollbar(bits_frame, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
-        
-        scrollable_frame.bind("<Configure>", 
+       
+        scrollable_frame.bind("<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        
+       
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        
-        canvas.pack(side="left", fill="both", expand=True)
+       
+        canvas.pack(side="left", fill="both", expand=True, padx=(5, 0))
         scrollbar.pack(side="right", fill="y")
-        
-        # Create bit checkboxes (16 bits)
+       
+        # Create bit checkboxes with descriptions
         self.bit_vars = {}
-        for i in range(16):
+        self.bit_checkboxes = {}
+        
+        for i in range(self.bit_width):
+            bit_frame = ttk.Frame(scrollable_frame)
+            bit_frame.pack(fill='x', padx=5, pady=1)
+            
             var = tk.BooleanVar()
             var.trace('w', self._update_value)
-            cb = ttk.Checkbutton(scrollable_frame, text=f"Bit {i}", variable=var)
-            cb.pack(anchor='w', padx=5, pady=1)
+            
+            # Create checkbox with bit number
+            cb = ttk.Checkbutton(bit_frame, text=f"Bit {i:2d}", variable=var, width=8)
+            cb.pack(side='left')
+            
+            # Add description if available
+            description = self.bit_descriptions.get(i, "")
+            if description:
+                desc_label = ttk.Label(bit_frame, text=f"- {description}", 
+                                     foreground='blue')
+                desc_label.pack(side='left', padx=(10, 0))
+            else:
+                # Show as unused/reserved if no description
+                desc_label = ttk.Label(bit_frame, text="- (unused)", 
+                                     foreground='gray')
+                desc_label.pack(side='left', padx=(10, 0))
+            
             self.bit_vars[i] = var
+            self.bit_checkboxes[i] = cb
+            
+        # Quick action buttons
+        action_frame = ttk.LabelFrame(main_frame, text="Quick Actions")
+        action_frame.pack(fill='x', pady=(0, 10))
         
+        quick_buttons = ttk.Frame(action_frame)
+        quick_buttons.pack(fill='x', padx=5, pady=5)
+        
+        ttk.Button(quick_buttons, text="Set All", command=self._set_all_bits).pack(side='left', padx=(0, 5))
+        ttk.Button(quick_buttons, text="Clear All", command=self._clear_all_bits).pack(side='left', padx=(0, 5))
+        ttk.Button(quick_buttons, text="Toggle All", command=self._toggle_all_bits).pack(side='left', padx=(0, 5))
+        
+        # Value entry
+        entry_frame = ttk.Frame(action_frame)
+        entry_frame.pack(fill='x', padx=5, pady=(0, 5))
+        
+        ttk.Label(entry_frame, text="Set value:").pack(side='left')
+        self.value_entry = ttk.Entry(entry_frame, width=10, font=('Courier', 10))
+        self.value_entry.pack(side='left', padx=(5, 5))
+        self.value_entry.bind('<Return>', self._set_from_entry)
+        ttk.Button(entry_frame, text="Apply", command=self._set_from_entry).pack(side='left')
+       
         # Buttons
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill='x')
+       
+        ttk.Button(button_frame, text="OK", command=self._ok_clicked).pack(side='right', padx=(5, 0))
+        ttk.Button(button_frame, text="Cancel", command=self._cancel_clicked).pack(side='right', padx=(5, 0))
+        ttk.Button(button_frame, text="Apply", command=self._apply_clicked).pack(side='right', padx=(5, 0))
         
-        ttk.Button(button_frame, text="OK", command=self._ok_clicked).pack(side='right', padx=5)
-        ttk.Button(button_frame, text="Cancel", command=self._cancel_clicked).pack(side='right')
-
+        # Bind mouse wheel to canvas
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        
     def _load_current_value(self):
         """Load current value into bit checkboxes"""
         try:
@@ -87,8 +182,8 @@ class BitfieldEditor:
                 var.set(bool(current_value & (1 << bit)))
             self._update_value()
         except ValueError:
-            self.value_label.config(text="Invalid value")
-
+            self._update_value_labels("Invalid", "Invalid", "Invalid")
+            
     def _update_value(self, *args):
         """Update value display based on bit checkboxes"""
         value = 0
@@ -96,18 +191,77 @@ class BitfieldEditor:
             if var.get():
                 value |= (1 << bit)
         
-        self.value_label.config(text=f"0x{value:04x} ({value})")
-
-    def _ok_clicked(self):
-        """Apply changes and close dialog"""
+        decimal_str = str(value)
+        hex_str = f"0x{value:0{(self.bit_width + 3) // 4}x}"
+        binary_str = f"{value:0{self.bit_width}b}"
+        
+        self._update_value_labels(decimal_str, hex_str, binary_str)
+        
+    def _update_value_labels(self, decimal, hex_val, binary):
+        """Update the value display labels"""
+        self.decimal_label.config(text=decimal)
+        self.hex_label.config(text=hex_val)
+        self.binary_label.config(text=binary)
+        
+    def _set_all_bits(self):
+        """Set all bits to 1"""
+        for var in self.bit_vars.values():
+            var.set(True)
+            
+    def _clear_all_bits(self):
+        """Clear all bits to 0"""
+        for var in self.bit_vars.values():
+            var.set(False)
+            
+    def _toggle_all_bits(self):
+        """Toggle all bits"""
+        for var in self.bit_vars.values():
+            var.set(not var.get())
+            
+    def _set_from_entry(self, event=None):
+        """Set bits based on value entered in entry field"""
+        try:
+            value_str = self.value_entry.get().strip()
+            if value_str.startswith('0x') or value_str.startswith('0X'):
+                value = int(value_str, 16)
+            elif value_str.startswith('0b') or value_str.startswith('0B'):
+                value = int(value_str, 2)
+            else:
+                value = int(value_str)
+                
+            # Clamp value to bit width
+            max_value = (1 << self.bit_width) - 1
+            value = min(value, max_value)
+            
+            for bit, var in self.bit_vars.items():
+                var.set(bool(value & (1 << bit)))
+                
+            self.value_entry.delete(0, tk.END)
+            
+        except ValueError:
+            # Flash entry field red on error
+            original_bg = self.value_entry.cget('background')
+            self.value_entry.config(background='#ffcccc')
+            self.dialog.after(200, lambda: self.value_entry.config(background=original_bg))
+            
+    def _get_current_value(self):
+        """Get current value from bit checkboxes"""
         value = 0
         for bit, var in self.bit_vars.items():
             if var.get():
                 value |= (1 << bit)
-        
+        return value
+            
+    def _apply_clicked(self):
+        """Apply changes without closing dialog"""
+        value = self._get_current_value()
         self.var.set(str(value))
+        
+    def _ok_clicked(self):
+        """Apply changes and close dialog"""
+        self._apply_clicked()
         self.dialog.destroy()
-
+        
     def _cancel_clicked(self):
         """Close dialog without applying changes"""
         self.dialog.destroy()
@@ -142,7 +296,7 @@ class SettingsManager:
         }
         
         self.voltage_dac_mapping = {
-            f'dac{i}': f'dac{i}v' for i in range(6)
+            f'dac{i}': f'dac{i}v' for i in range(8)
         }
         
         # Settings data structures
@@ -364,7 +518,7 @@ class SettingsManager:
         voltage_frame = ttk.LabelFrame(parent, text="DAC Voltage Settings")
         voltage_frame.pack(fill='x', padx=5, pady=5)
         
-        for i in range(6):
+        for i in range(8):
             dac_name = f'dac{i}'
             label = f'DAC{i} Voltage' + (' (START)' if i == 0 else f' (STOP{i})')
             self._create_voltage_widget(voltage_frame, dac_name, label)
@@ -373,7 +527,7 @@ class SettingsManager:
         hex_frame = ttk.LabelFrame(parent, text="DAC Hex Values")
         hex_frame.pack(fill='x', padx=5, pady=5)
         
-        for i in range(6):
+        for i in range(8):
             dac_name = f'dac{i}'
             label = f'DAC{i} Hex Value'
             self._create_channel_setting_widget(hex_frame, dac_name, BOARDSETTING, label, widget_type='hex')
@@ -509,6 +663,7 @@ class SettingsManager:
     def apply_setting(self, setting, settings_type):
         """Apply a setting to the device"""
         try:
+            settings_type = settings_type.replace(' settings', '')
             settings_dict = self.settings_data.get(settings_type, {})
             if setting not in settings_dict:
                 raise ValueError(f"Setting {setting} not found in {settings_type}")
@@ -540,7 +695,7 @@ class SettingsManager:
                 value = f"0x{value}"
             
             if 'dac' in field_name:
-                value = f'{((float(value) - 2048) / 1000):.3f}'
+                value = f'{(-(float(value) - 2048) / 1000):.3f}'
                 voltage_widget = self.channel_widgets.get(f'{field_name}_voltage')
                 if voltage_widget:
                     voltage_widget['var'].set(value)
@@ -614,7 +769,9 @@ class SettingsManager:
             acq = self.mcs.get_acq_setting(self.current_channel)
             dat = self.mcs.get_dat_setting()
             board = self.mcs.get_mcs_setting()
-            
+
+
+
             # Update widgets
             for field_name, widget_info in self.channel_widgets.items():
                 if field_name.endswith('_voltage'):
@@ -622,14 +779,20 @@ class SettingsManager:
                     
                 structure = widget_info['structure']
                 value = None
-                
+            
                 if structure == ACQSETTING:
                     value = getattr(acq, field_name, '')
                 elif structure == DATSETTING:
                     value = getattr(dat, field_name, '')
                 elif structure == BOARDSETTING:
                     value = getattr(board, field_name, '')
-                
+
+                    if 'dac' in field_name and type(value) is int:
+                        value_dac = f'{(-(float(value) - 2048) / 1000):.3f}'
+                        voltage_widget = self.channel_widgets.get(f'{field_name}_voltage')
+                        if voltage_widget:
+                            voltage_widget['var'].set(value_dac)
+                    
                 if value is not None:
                     if field_name == 'sweepmode':
                         widget_info['var'].set(f"{value:08x}")

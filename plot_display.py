@@ -38,6 +38,10 @@ class MCSDisplay:
         # Initial setup
         self._setup_plot_params()
         self.create_display()
+        self._isplaying = False
+    
+    def _set_playing(self):
+        self._isplaying = False
         
     def _setup_plot_params(self):
         """Set up matplotlib parameters for better performance and compact layout"""
@@ -92,6 +96,13 @@ class MCSDisplay:
         self.active_channels_cache = set(active_channels)
         
         return self.fig, self.axes, self.canvas
+    
+    def preiodic_update(self):
+        """Periodic update method to refresh the display"""
+        while(self._isplaying):
+            self.update_plot(force=False, rebuild=False)
+            # wait 1 second before next update
+            time.sleep(1)
 
     def _create_figure_and_plots(self, active_channels: List[int], channel_data: Dict[int, np.ndarray], 
                                  parent_frame: ttk.Frame, is2d: List[bool]):
@@ -165,7 +176,7 @@ class MCSDisplay:
             ax.grid(True, which="both", ls="-", alpha=0.2)
             
             # Labels and titles
-            ax.set_ylabel(f'Ch {channel}\nCounts', fontsize=8)
+            ax.set_ylabel(f'Ch {channel+1}\nCounts', fontsize=8)
             
             # Only show x-axis label and ticks on the bottom plot
             if plot_idx == num_channels - 1:
@@ -177,7 +188,7 @@ class MCSDisplay:
             
             # Add subtle channel identification
             if num_channels > 1:
-                ax.text(0.95, 0.95, f'Ch {channel}', transform=ax.transAxes, 
+                ax.text(0.95, 0.95, f'Ch {channel+1}', transform=ax.transAxes, 
                        fontsize=8, verticalalignment='top', 
                        bbox=dict(boxstyle="round,pad=0.3", facecolor=color, alpha=0.3))
             

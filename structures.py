@@ -278,6 +278,7 @@ class BOARDSETTING(Structure):
         ("dac3", c_int),            # DAC3 value (STOP 3)
         ("dac4", c_int),            # DAC4 value (STOP 4)
         ("dac5", c_int),            # DAC5 value (STOP 5)
+
                                     # bit (14,15) of each word: 0=falling, 1=rising, 2=both, 3=both+CFT 
                                     # bit 17 of each: pulse width mode under threshold
         ("fdac", c_int),            # dummy
