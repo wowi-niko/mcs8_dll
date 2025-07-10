@@ -517,20 +517,41 @@ class SettingsManager:
         # Voltage settings
         voltage_frame = ttk.LabelFrame(parent, text="DAC Voltage Settings")
         voltage_frame.pack(fill='x', padx=5, pady=5)
-        
+    
         for i in range(8):
             dac_name = f'dac{i}'
             label = f'DAC{i} Voltage' + (' (START)' if i == 0 else f' (STOP{i})')
             self._create_voltage_widget(voltage_frame, dac_name, label)
+    
+        # Toggle button for hex values
+        toggle_frame = ttk.Frame(parent)
+        toggle_frame.pack(fill='x', padx=5, pady=2)
         
-        # Hex DAC values
-        hex_frame = ttk.LabelFrame(parent, text="DAC Hex Values")
-        hex_frame.pack(fill='x', padx=5, pady=5)
-        
+        self.show_hex_var = tk.BooleanVar(value=False)
+        toggle_btn = ttk.Checkbutton(
+            toggle_frame, 
+            text="Show Hex Values", 
+            variable=self.show_hex_var,
+            command=self._toggle_hex_display
+        )
+        toggle_btn.pack(anchor='w')
+    
+        # Hex DAC values (hidden by default)
+        self.hex_frame = ttk.LabelFrame(parent, text="DAC Hex Values")
+        self.hex_frame.pack(fill='x', padx=5, pady=5)
+        self.hex_frame.pack_forget()  # Hide initially
+    
         for i in range(8):
             dac_name = f'dac{i}'
             label = f'DAC{i} Hex Value'
-            self._create_channel_setting_widget(hex_frame, dac_name, BOARDSETTING, label, widget_type='hex')
+            self._create_channel_setting_widget(self.hex_frame, dac_name, BOARDSETTING, label, widget_type='hex')
+
+    def _toggle_hex_display(self):
+        """Toggle visibility of hex DAC values"""
+        if self.show_hex_var.get():
+            self.hex_frame.pack(fill='x', padx=5, pady=5)
+        else:
+            self.hex_frame.pack_forget()
     
     def _create_advanced_settings(self, parent):
         """Create advanced settings widgets"""
@@ -702,14 +723,14 @@ class SettingsManager:
             
             # Send command
             command = f"{command_name}={value}"
-            self.mcs.run_cmd(command)
+            res = self.mcs.run_cmd(command)
             
             # Update status
             status_label.config(foreground="green")
             self.modified_settings.discard(field_name)
             
             self._update_status(f"Applied: {command}", "green")
-            self.output_callback(f"Channel Command: {command}\n")
+            self.output_callback(f"Channel Command: {command}; {res}\n")
             
         except Exception as e:
             status_label.config(foreground="red")
@@ -725,10 +746,10 @@ class SettingsManager:
                 raise ValueError(f"No voltage command mapping for {dac_name}")
             
             command = f"{command_name}={voltage:.3f}"
-            self.mcs.run_cmd(command)
+            res = self.mcs.run_cmd(command)
             
             self._update_status(f"Applied: {command}", "green")
-            self.output_callback(f"Voltage Command: {command}\n")
+            self.output_callback(f"Voltage Command: {command}; {res}\n")
             
         except Exception as e:
             self._update_status(f"Error: {e}", "red")
@@ -788,6 +809,11 @@ class SettingsManager:
                     value = getattr(board, field_name, '')
 
                     if 'dac' in field_name and type(value) is int:
+                        dacnum = int(field_name[-1])
+                        if dacnum > 5:
+                            res = self.mcs.run_cmd(f'rdac{dacnum} 0')
+                            value = int(res, 16)
+
                         value_dac = f'{(-(float(value) - 2048) / 1000):.3f}'
                         voltage_widget = self.channel_widgets.get(f'{field_name}_voltage')
                         if voltage_widget:
@@ -840,6 +866,9 @@ class SettingsManager:
         """Handle channel selection change"""
         self.current_channel = self.channel_var.get()
         self.load_channel_settings()
+        if self.current_channel > 0:
+            res = self.mcs.run_cmd(f'[CHN{self.current_channel}]')
+            self.output_callback(f'[CHN{self.current_channel}]; {res}\n')
     
     def _adjust_voltage(self, dac_name, delta):
         """Adjust voltage by delta amount"""

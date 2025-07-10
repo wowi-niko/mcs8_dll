@@ -1,4 +1,4 @@
-from ctypes import Structure, c_char, c_double, c_int
+from ctypes import Structure, c_char, c_double, c_int, c_uint
 from dataclasses import dataclass, field
 
 # --- Constants (from C# implementation) ---
@@ -13,11 +13,8 @@ class Constants:
     ST_ZEROEVTS = 7
 
 # --- Structure definitions ---
-@dataclass
 class ACQSETTING(Structure):
     """Acquisition settings structure - MCS Channel Status"""
-
-    # ctypes structure definition
     _fields_ = [
         ("range", c_int),           # spectrum length
         ("cftfak", c_int),          # LOWORD: 256 * cft factor (t_after_peak / t_to_peak)
@@ -30,33 +27,15 @@ class ACQSETTING(Structure):
         ("param", c_int),           # (reserved:) for MAP and POS: LOWORD=x, HIWORD=y
         ("offset", c_int),          # (reserved:) zoomed MAPS: LOWORD: xoffset, HIWORD, yoffset
         ("xdim", c_int),            # (reserved:) x resolution of maps
-        ("type", c_int),            # Type field (from original Python version)
-        ("bitshift", c_int),        # LOWORD: Binwidth = 2 ^ (bitshift)
+        # ("type", c_int),          # ← REMOVE THIS LINE - doesn't exist in C structure
+        ("bitshift", c_uint),       # LOWORD: Binwidth = 2 ^ (bitshift) - changed to c_uint
                                     # HIWORD: Threshold for Coinc
-        ("active", c_int),          # Spectrum definition words for CHN1..6:
-                                    # active & 0xF  ==0 not used 
-                                    #               ==1 single
-                                    # bit 8: Enable Tag bits
-                                    # bit 9: start with rising edge 
-                                    # bit 10: time under threshold for pulse width
-                                    # bit 11: pulse width mode for any spectra with both edges enabled
-                                    # Spectrum definition words for calc. spectra:
-                                    # active & 0xF  ==3 MAP, ((x-xoffs)>>xsh) x ((y-yoffs)>>ysh)
-                                    #                 ((x-xoffs)>>xsh) x ((y-timeoffs)>>timesh)  
-                                    #              or ((x-timeoffs)>>timesh x ((y-yoffs)>>ysh)  
-                                    #         bit4=1: x zoomed MAP
-                                    #         bit5=1: y zoomed MAP
-                                    #               ==5 SUM, (x + y)>>xsh
-                                    #               ==6 DIFF,(x - y + range)>>xsh
-                                    #               ==7 ANY, (for compare)
-                                    #               ==8 COPY, x
-                                    #               ==9 DLL  fDLL(x,y,z), 
-                                    #               ==0xA Sweep HISTORY, Sweepnum(x)
-                                    # bit 8..11 xsh, bit 12..15 ysh or bit 8..15 xsh
-                                    # HIWORD(active) = condition no. (0=no condition)
-        ("eventpreset", c_double),  # ROI preset value (corrected from evpreset)
-        ("dummy1", c_double),       # (Livetime preset)
-        ("dummy2", c_double),       # (Realtime preset)
+        ("active", c_int),          # Spectrum definition words for CHN1..8:
+                                    # active & 0xF  ==0 not used
+                                    # ... rest of comments ...
+        ("eventpreset", c_double),  # ROI preset value
+        ("dummy1", c_double),       # (for future use..)
+        ("dummy2", c_double),       # 
         ("dummy3", c_double)        # Reserved
     ]
     
@@ -278,6 +257,8 @@ class BOARDSETTING(Structure):
         ("dac3", c_int),            # DAC3 value (STOP 3)
         ("dac4", c_int),            # DAC4 value (STOP 4)
         ("dac5", c_int),            # DAC5 value (STOP 5)
+        ("dac6", c_int),            # DAC6 value (STOP 6)
+        ("dac7", c_int),            # DAC7 value (STOP 7)
 
                                     # bit (14,15) of each word: 0=falling, 1=rising, 2=both, 3=both+CFT 
                                     # bit 17 of each: pulse width mode under threshold

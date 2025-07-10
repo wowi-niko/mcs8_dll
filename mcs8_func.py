@@ -130,9 +130,21 @@ class MCS8:
         self.dll.SaveData.argtypes = [c_int, c_int]
         self.dll.SaveData.restype  = None
 
-    def run_cmd(self, command: str) -> None:
-        """Send a command string to the device."""
-        self.dll.RunCmd(0, command.encode('utf-8'))
+    def run_cmd(self, command: str) -> str:
+        """Send a command string to the device and return the modified string."""
+        # Create a mutable buffer with extra space for the result
+        buffer_size = len(command) + 1024  # Command + space for sprintf result
+        command_buffer = ctypes.create_string_buffer(command.encode('utf-8'), buffer_size)
+        
+        # Configure the DLL function signature
+        self.dll.RunCmd.argtypes = [ctypes.c_int, ctypes.c_char_p]
+        self.dll.RunCmd.restype = None
+        
+        # Call the function - it will modify command_buffer in-place
+        self.dll.RunCmd(0, command_buffer)
+        
+        # Return the modified string
+        return command_buffer.value.decode('utf-8')
 
     def start(self) -> None:
         """Start measurement."""
