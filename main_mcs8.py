@@ -76,7 +76,7 @@ class MCSUI:
         self.root.rowconfigure(2, weight=0)
         
         # Keyboard shortcuts
-        self.root.bind('<Control-grave>', lambda e: self._toggle_command_interface())
+        self.root.bind('<Control-quoteleft>', lambda e: self._toggle_command_interface())
         self.root.bind('<Control-s>', lambda e: self._focus_channel_settings())
         self.root.bind('<F5>', lambda e: self._manual_refresh_all())
         self.root.bind('<Control-r>', lambda e: self._load_all_settings())
